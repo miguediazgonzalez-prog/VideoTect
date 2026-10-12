@@ -58,6 +58,9 @@ progress{width:100%;accent-color:var(--ac)}
     <label>Idioma del audio
       <select id="lang"><option value="spanish">Español</option><option value="english">English</option><option value="french">Français</option><option value="portuguese">Português</option><option value="italian">Italiano</option><option value="german">Deutsch</option><option value="">Detectar</option></select>
     </label>
+    <label>Modelo de transcripción
+      <select id="model"><option value="Xenova/whisper-base">Preciso (base, ~150 MB)</option><option value="Xenova/whisper-tiny">Ligero (tiny, ~40 MB, recomendado en móvil)</option></select>
+    </label>
     <button id="tr">1. Transcribir audio</button>
     <label>Estilo <select id="style"></select></label>
     <label>Fuente
@@ -95,7 +98,7 @@ addEventListener('unhandledrejection', e => say('Error: ' + (e.reason?.message |
 const vid = document.createElement('video');
 vid.muted = true; vid.loop = true; vid.playsInline = true;
 let aud = null, ac = null, asrc = null, adest = null, audioFile = null;
-let lines = [], asr = null, raf = 0, pics = [];
+let lines = [], asr = null, raf = 0, pics = [], asrName = '', vidURL = '';
 
 /* ---------- opciones ---------- */
 const opts = () => ({
@@ -251,7 +254,7 @@ $('ratio').onchange = () => { sizeCanvas(); draw(); };
 /* ---------- entrada de archivos ---------- */
 $('vid').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
-  vid.src = URL.createObjectURL(f);
+  vidURL = URL.createObjectURL(f); vid.src = vidURL;
   vid.onloadedmetadata = sizeCanvas;
   vid.onloadeddata = () => { vid.currentTime = .01; };
   vid.onseeked = () => { if (aud?.paused !== false) draw(); };
@@ -277,7 +280,7 @@ async function decode(file) {
   const ctx = new AudioContext({ sampleRate: 16000 });
   const buf = await ctx.decodeAudioData(await file.arrayBuffer());
   ctx.close();
-  return buf.getChannelData(0);
+  return buf.getChannelData(0).slice();
 }
 
 function group(chunks) {
@@ -295,24 +298,43 @@ function group(chunks) {
   return out;
 }
 
+if (/iP(hone|ad|od)|Android/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+  $('model').value = 'Xenova/whisper-tiny';                  // móviles: menos memoria
+
 $('tr').onclick = async () => {
   if (!audioFile) return say('Primero elige un audio.');
   $('tr').disabled = true;
+  const hadVideo = !!vid.getAttribute('src');
   try {
-    say('Cargando modelo de transcripción…');
-    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
-    asr ??= await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
-      progress_callback: d => { if (d.status === 'progress') say(`Descargando modelo… ${Math.round(d.progress)}%`); }
-    });
-    say('Transcribiendo (puede tardar un poco)…');
-    const out = await asr(await decode(audioFile), {
-      return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5,
-      language: $('lang').value || null, task: 'transcribe'
-    });
-    lines = group(out.chunks);
+    if (hadVideo) { vid.pause(); vid.removeAttribute('src'); vid.load(); }   // libera memoria (iOS)
+    const name = $('model').value;
+    if (asrName !== name) {
+      say('Cargando modelo de transcripción…');
+      const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
+      if (env?.backends?.onnx?.wasm) env.backends.onnx.wasm.numThreads = 1;
+      asr = null; asrName = '';
+      asr = await pipeline('automatic-speech-recognition', name, {
+        progress_callback: d => { if (d.status === 'progress') say(`Descargando modelo… ${Math.round(d.progress)}%`); }
+      });
+      asrName = name;
+    }
+    say('Decodificando audio…');
+    const data = await decode(audioFile);
+    const SEG = 30 * 16000, n = Math.ceil(data.length / SEG), all = [];
+    for (let k = 0; k < n; k++) {
+      const part = data.subarray(k * SEG, (k + 1) * SEG);
+      if (part.length < 8000) break;                          // resto < 0,5 s
+      say(`Transcribiendo… tramo ${k + 1} de ${n}`);
+      const out = await asr(part, { return_timestamps: 'word', language: $('lang').value || null, task: 'transcribe' });
+      const off = k * 30;
+      for (const ch of out.chunks) all.push({ text: ch.text, timestamp: [ch.timestamp[0] + off, ch.timestamp[1] == null ? null : ch.timestamp[1] + off] });
+      await new Promise(r => setTimeout(r));                  // cede el hilo a la interfaz
+    }
+    lines = group(all);
     say(`Listo: ${lines.length} líneas. Previsualiza o genera el vídeo.`);
-    draw();
   } catch (err) { console.error(err); say('Error al transcribir: ' + err.message); }
+  if (hadVideo) vid.src = vidURL;
+  draw();
   $('tr').disabled = false;
 };
 
