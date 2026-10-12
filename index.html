@@ -86,11 +86,11 @@ progress{width:100%;accent-color:var(--ac)}
 </main>
 
 <script type="module">
-import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2";
-
 const $ = id => document.getElementById(id);
 const cv = $('cv'), c = cv.getContext('2d');
-const say = m => $('msg').textContent = m;
+const say = m => { $('msg').textContent = m; $('msg').scrollIntoView({ block: 'nearest' }); };
+addEventListener('error', e => say('Error: ' + e.message));
+addEventListener('unhandledrejection', e => say('Error: ' + (e.reason?.message || e.reason)));
 
 const vid = document.createElement('video');
 vid.muted = true; vid.loop = true; vid.playsInline = true;
@@ -300,6 +300,7 @@ $('tr').onclick = async () => {
   $('tr').disabled = true;
   try {
     say('Cargando modelo de transcripción…');
+    const { pipeline } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2');
     asr ??= await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
       progress_callback: d => { if (d.status === 'progress') say(`Descargando modelo… ${Math.round(d.progress)}%`); }
     });
