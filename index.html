@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Subtítulos dinámicos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Bangers&family=Bricolage+Grotesque:wght@400;700&family=Pacifico&family=Permanent+Marker&family=Rubik+Mono+One&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#14122b;--panel:#1f1b3d;--line:#352f66;--tx:#eae6ff;--mute:#9b94cf;--ac:#ff5c8a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 "Bricolage Grotesque",system-ui,sans-serif}
+main{display:grid;grid-template-columns:340px 1fr;gap:20px;max-width:1280px;margin:0 auto;padding:20px}
+@media(max-width:860px){main{grid-template-columns:1fr}}
+h1{font-size:22px;margin:0 0 4px}
+#ctl{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;flex-direction:column;gap:12px;align-self:start}
+label{display:flex;flex-direction:column;gap:4px;color:var(--mute);font-size:13px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.grp{display:flex;flex-direction:column;gap:12px}
+input,select{background:var(--bg);color:var(--tx);border:1px solid var(--line);border-radius:8px;padding:7px;font:inherit}
+input[type=color]{padding:2px;height:34px}
+input[type=checkbox]{width:18px;height:18px}
+button{background:var(--ac);color:#1a0610;border:0;border-radius:8px;padding:10px;font:700 15px inherit;font-family:inherit;cursor:pointer}
+button.sec{background:transparent;color:var(--tx);border:1px solid var(--line)}
+button:disabled{opacity:.5;cursor:wait}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ac);outline-offset:2px}
+#stage{display:flex;flex-direction:column;gap:12px}
+canvas,#out video{width:100%;max-height:70vh;background:#000;border-radius:12px;object-fit:contain}
+progress{width:100%;accent-color:var(--ac)}
+#msg{color:var(--mute);min-height:20px}
+#out a{color:var(--ac);font-weight:700}
+</style>
+</head>
+<body>
+<main>
+  <section id="ctl">
+    <div><h1>Subtítulos dinámicos</h1><div style="color:var(--mute)">Vídeo + audio → vídeo con subtítulos animados</div></div>
+    <label>Fuente visual
+      <select id="mode"><option value="video">Vídeo</option><option value="photos">Fotos (presentación)</option></select>
+    </label>
+    <label id="vidL">Vídeo <input type="file" id="vid" accept="video/*"></label>
+    <div id="phBox" class="grp" style="display:none">
+      <label>Fotos <input type="file" id="pics" accept="image/*" multiple></label>
+      <div class="row">
+        <label>Transición
+          <select id="trans"><option value="fade">Fundido</option><option value="slide">Deslizar</option><option value="zoom">Zoom</option><option value="wipe">Cortinilla</option><option value="random">Variada</option><option value="cut">Corte</option></select>
+        </label>
+        <label>Segundos por foto <input type="number" id="secs" min=".5" step=".5" value="3"></label>
+      </div>
+      <div class="row">
+        <label>Color de fondo <input type="color" id="bg" value="#14122b"></label>
+        <label>Formato <select id="ratio"><option>16:9</option><option>9:16</option><option>1:1</option><option>4:5</option></select></label>
+      </div>
+      <label>Ajuste de foto <select id="fitm"><option value="contain">Entera (se ve el fondo)</option><option value="cover">Rellenar</option></select></label>
+      <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="fit" checked> Repartir las fotos a lo largo del audio</label>
+    </div>
+    <label>Audio (mp3, wav, m4a, ogg, flac, aac, opus…) <input type="file" id="aud" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.opus,.flac,.weba,.aif,.aiff,.wma,.mp4,.webm,.mov,.mkv"></label>
+    <label>Idioma del audio
+      <select id="lang"><option value="spanish">Español</option><option value="english">English</option><option value="french">Français</option><option value="portuguese">Português</option><option value="italian">Italiano</option><option value="german">Deutsch</option><option value="">Detectar</option></select>
+    </label>
+    <button id="tr">1. Transcribir audio</button>
+    <label>Estilo <select id="style"></select></label>
+    <label>Fuente
+      <select id="font"><option>Anton</option><option>Bangers</option><option>Permanent Marker</option><option>Pacifico</option><option>Rubik Mono One</option><option>Bricolage Grotesque</option></select>
+    </label>
+    <div class="row">
+      <label>Color base <input type="color" id="base" value="#ffffff"></label>
+      <label>Color activo <input type="color" id="hi" value="#ffd60a"></label>
+    </div>
+    <div class="row">
+      <label>Tamaño <input type="range" id="size" min="3" max="14" step=".5" value="7"></label>
+      <label>Posición <input type="range" id="pos" min="10" max="94" value="82"></label>
+    </div>
+    <label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" id="up" checked> Mayúsculas</label>
+    <div class="row">
+      <button class="sec" id="play">Previsualizar</button>
+      <button id="rec">2. Generar vídeo</button>
+    </div>
+  </section>
+  <section id="stage">
+    <canvas id="cv" width="1280" height="720"></canvas>
+    <progress id="pg" value="0" max="1" hidden></progress>
+    <div id="msg">Elige un vídeo y un audio.</div>
+    <div id="out"></div>
+  </section>
+</main>
+
+<script type="module">
+import { pipeline } from "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.0.2";
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), c = cv.getContext('2d');
+const say = m => $('msg').textContent = m;
+
+const vid = document.createElement('video');
+vid.muted = true; vid.loop = true; vid.playsInline = true;
+let aud = null, ac = null, asrc = null, adest = null, audioFile = null;
+let lines = [], asr = null, raf = 0, pics = [];
+
+/* ---------- opciones ---------- */
+const opts = () => ({
+  font: $('font').value, size: +$('size').value, base: $('base').value,
+  hi: $('hi').value, pos: +$('pos').value, up: $('up').checked
+});
+
+/* ---------- helpers de dibujo ---------- */
+const st = (it, t) => t < it.s ? 0 : t < it.e ? 1 : 2;               // 0 futura, 1 sonando, 2 pasada
+const pr = (it, t) => Math.min(1, Math.max(0, (t - it.s) / Math.max(.05, it.e - it.s)));
+
+function layout(L, o) {
+  const W = cv.width, H = cv.height;
+  let fs = H * o.size / 100;
+  const f = s => `800 ${s}px "${o.font}", sans-serif`;
+  c.font = f(fs);
+  const txt = L.words.map(w => o.up ? w.t.toUpperCase() : w.t);
+  let ws = txt.map(t => c.measureText(t).width), sp = c.measureText(' ').width;
+  let tot = ws.reduce((a, b) => a + b, 0) + sp * (ws.length - 1);
+  const max = W * .9;
+  if (tot > max) { const k = max / tot; fs *= k; c.font = f(fs); ws = ws.map(w => w * k); sp *= k; tot = max; }
+  let x = (W - tot) / 2;
+  const items = L.words.map((w, i) => { const it = { t: txt[i], w: ws[i], x, s: w.s, e: w.e }; x += ws[i] + sp; return it; });
+  return { items, fs, y: H * o.pos / 100 };
+}
+
+function word(it, y, fs, fill, { scale = 1, glow = 0, glowC = '#fff' } = {}) {
+  c.save();
+  c.translate(it.x + it.w / 2, y); c.scale(scale, scale);
+  c.textAlign = 'center'; c.textBaseline = 'middle'; c.lineJoin = 'round';
+  c.lineWidth = fs * .14; c.strokeStyle = '#000'; c.strokeText(it.t, 0, 0);
+  if (glow) { c.shadowColor = glowC; c.shadowBlur = glow; }
+  c.fillStyle = fill; c.fillText(it.t, 0, 0);
+  c.restore();
+}
+
+/* ---------- estilos (añade los tuyos aquí) ---------- */
+const STYLES = {
+  'Karaoke (relleno progresivo)': (L, t, o) => L.items.forEach(it => {
+    word(it, L.y, L.fs, o.base);
+    const s = st(it, t);
+    if (s) {
+      c.save(); c.beginPath();
+      c.rect(it.x, 0, it.w * (s === 2 ? 1 : pr(it, t)), cv.height); c.clip();
+      word(it, L.y, L.fs, o.hi); c.restore();
+    }
+  }),
+  'Cambio de color': (L, t, o) => L.items.forEach(it =>
+    word(it, L.y, L.fs, st(it, t) === 1 ? o.hi : o.base)),
+  'Pop (zoom)': (L, t, o) => L.items.forEach(it => {
+    const a = st(it, t) === 1;
+    word(it, L.y, L.fs, a ? o.hi : o.base, { scale: a ? 1 + .3 * Math.min(1, (t - it.s) * 8) : 1 });
+  }),
+  'Caja resaltada': (L, t, o) => L.items.forEach(it => {
+    if (st(it, t) === 1) {
+      c.fillStyle = o.hi; c.beginPath();
+      c.roundRect(it.x - L.fs * .15, L.y - L.fs * .6, it.w + L.fs * .3, L.fs * 1.2, L.fs * .2); c.fill();
+    }
+    word(it, L.y, L.fs, o.base);
+  }),
+  'Neón': (L, t, o) => L.items.forEach(it => {
+    const a = st(it, t) === 1;
+    c.globalAlpha = st(it, t) === 0 ? .45 : 1;
+    word(it, L.y, L.fs, a ? o.hi : o.base, { glow: a ? L.fs * .8 : 0, glowC: o.hi });
+    c.globalAlpha = 1;
+  }),
+  'Palabra a palabra (aparece)': (L, t, o) => L.items.forEach(it => {
+    const s = st(it, t); if (!s) return;
+    word(it, L.y, L.fs, s === 1 ? o.hi : o.base, { scale: s === 1 ? 1 + .2 * Math.min(1, (t - it.s) * 8) : 1 });
+  }),
+  'Ola (salto)': (L, t, o) => L.items.forEach(it => {
+    const a = st(it, t) === 1;
+    const dy = a ? -L.fs * .22 * Math.sin(pr(it, t) * Math.PI) : 0;
+    word(it, L.y + dy, L.fs, a ? o.hi : o.base);
+  })
+};
+for (const k of Object.keys(STYLES)) $('style').add(new Option(k, k));
+
+/* ---------- render de un fotograma ---------- */
+const idleT = () => lines.length ? (lines[0].start + lines[0].end) / 2 : 0;
+let playing = false, t0 = 0;
+function curT() { return aud ? aud.currentTime : (performance.now() - t0) / 1000; }
+const nowT = () => playing ? curT() : idleT();
+const total = () => aud ? aud.duration : pics.length * (+$('secs').value || 3);
+
+function draw(t = nowT()) {
+  c.clearRect(0, 0, cv.width, cv.height);
+  if (isPh()) {
+    c.fillStyle = $('bg').value; c.fillRect(0, 0, cv.width, cv.height);
+    if (pics.length) drawPhotos(t);
+  } else if (vid.readyState >= 2) c.drawImage(vid, 0, 0, cv.width, cv.height);
+  else { c.fillStyle = '#000'; c.fillRect(0, 0, cv.width, cv.height); }
+  const L = lines.findLast(l => t >= l.start - .05 && t <= l.end + .35);
+  if (!L) return;
+  const o = opts();
+  STYLES[$('style').value](layout(L, o), t, o);
+}
+
+/* ---------- modo fotos ---------- */
+const isPh = () => $('mode').value === 'photos';
+
+function sizeCanvas() {
+  if (isPh()) {
+    const [w, h] = { '16:9': [1280, 720], '9:16': [720, 1280], '1:1': [1080, 1080], '4:5': [864, 1080] }[$('ratio').value];
+    cv.width = w; cv.height = h;
+  } else if (vid.videoWidth) {
+    const k = Math.min(1, 1280 / vid.videoWidth);
+    cv.width = Math.round(vid.videoWidth * k / 2) * 2;
+    cv.height = Math.round(vid.videoHeight * k / 2) * 2;
+  }
+}
+
+function place(b, sc = 1, dx = 0, alpha = 1) {
+  const W = cv.width, H = cv.height;
+  const k = ($('fitm').value === 'cover' ? Math.max : Math.min)(W / b.width, H / b.height) * sc;
+  const w = b.width * k, h = b.height * k;
+  c.save(); c.globalAlpha = alpha;
+  c.drawImage(b, (W - w) / 2 + dx, (H - h) / 2, w, h);
+  c.restore();
+}
+
+function drawPhotos(t) {
+  const n = pics.length;
+  const per = $('fit').checked && aud ? aud.duration / n : (+$('secs').value || 3);
+  const i = Math.min(n - 1, Math.max(0, Math.floor(t / per)));
+  const trd = Math.min(per * .4, .8);                       // duración de la transición
+  const p = i > 0 ? Math.min(1, (t - i * per) / trd) : 1;
+  const cur = pics[i], prev = pics[i - 1];
+  let tr = $('trans').value;
+  if (tr === 'random') tr = ['fade', 'slide', 'zoom', 'wipe'][i % 4];
+  if (!prev || p >= 1 || tr === 'cut') return place(cur);
+  const e = p * p * (3 - 2 * p), W = cv.width;
+  if (tr === 'fade') { place(prev); place(cur, 1, 0, e); }
+  else if (tr === 'slide') { place(prev, 1, -W * e); place(cur, 1, W * (1 - e)); }
+  else if (tr === 'zoom') { place(prev, 1 + .3 * e, 0, 1 - e); place(cur, .85 + .15 * e, 0, e); }
+  else if (tr === 'wipe') {
+    place(prev); c.save(); c.beginPath(); c.rect(0, 0, W * e, cv.height); c.clip(); place(cur); c.restore();
+  }
+}
+
+$('pics').onchange = async e => {
+  const fs = [...e.target.files]; if (!fs.length) return;
+  pics = await Promise.all(fs.map(f => createImageBitmap(f)));
+  say(`${pics.length} fotos cargadas.`); draw();
+};
+$('mode').onchange = () => {
+  $('vidL').style.display = isPh() ? 'none' : '';
+  $('phBox').style.display = isPh() ? '' : 'none';
+  sizeCanvas(); draw();
+};
+$('ratio').onchange = () => { sizeCanvas(); draw(); };
+
+/* ---------- entrada de archivos ---------- */
+$('vid').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  vid.src = URL.createObjectURL(f);
+  vid.onloadedmetadata = sizeCanvas;
+  vid.onloadeddata = () => { vid.currentTime = .01; };
+  vid.onseeked = () => { if (aud?.paused !== false) draw(); };
+};
+
+$('aud').onchange = e => {
+  audioFile = e.target.files[0]; if (!audioFile) return;
+  aud = new Audio(URL.createObjectURL(audioFile));
+  aud.onerror = () => say('Tu navegador no puede leer este formato. Prueba con mp3, wav, m4a, ogg o flac.');
+  ac?.close(); ac = new AudioContext();
+  asrc = ac.createMediaElementSource(aud);
+  adest = ac.createMediaStreamDestination();
+  asrc.connect(ac.destination);
+  lines = [];
+  say('Audio cargado. Pulsa "Transcribir audio".');
+};
+
+document.querySelectorAll('#ctl input:not([type=file]),#ctl select').forEach(el => el.oninput = () => draw());
+document.fonts.ready.then(() => draw());
+
+/* ---------- transcripción (Whisper en el navegador) ---------- */
+async function decode(file) {
+  const ctx = new AudioContext({ sampleRate: 16000 });
+  const buf = await ctx.decodeAudioData(await file.arrayBuffer());
+  ctx.close();
+  return buf.getChannelData(0);
+}
+
+function group(chunks) {
+  const words = chunks
+    .map(ch => ({ t: ch.text.trim(), s: ch.timestamp[0], e: ch.timestamp[1] ?? ch.timestamp[0] + .3 }))
+    .filter(w => w.t);
+  const out = []; let cur = [];
+  const flush = () => { if (cur.length) { out.push({ words: cur, start: cur[0].s, end: cur.at(-1).e }); cur = []; } };
+  for (const w of words) {
+    if (cur.length && (cur.length >= 4 || w.s - cur.at(-1).e > .7)) flush();
+    cur.push(w);
+    if (/[.!?]$/.test(w.t)) flush();
+  }
+  flush();
+  return out;
+}
+
+$('tr').onclick = async () => {
+  if (!audioFile) return say('Primero elige un audio.');
+  $('tr').disabled = true;
+  try {
+    say('Cargando modelo de transcripción…');
+    asr ??= await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
+      progress_callback: d => { if (d.status === 'progress') say(`Descargando modelo… ${Math.round(d.progress)}%`); }
+    });
+    say('Transcribiendo (puede tardar un poco)…');
+    const out = await asr(await decode(audioFile), {
+      return_timestamps: 'word', chunk_length_s: 30, stride_length_s: 5,
+      language: $('lang').value || null, task: 'transcribe'
+    });
+    lines = group(out.chunks);
+    say(`Listo: ${lines.length} líneas. Previsualiza o genera el vídeo.`);
+    draw();
+  } catch (err) { console.error(err); say('Error al transcribir: ' + err.message); }
+  $('tr').disabled = false;
+};
+
+/* ---------- reproducción y generación ---------- */
+function ready() {
+  if (isPh() ? !pics.length : !vid.src) { say(isPh() ? 'Elige al menos una foto.' : 'Elige un vídeo.'); return false; }
+  if (!isPh() && !aud) { say('El modo vídeo necesita un audio.'); return false; }
+  return true;
+}
+const done = () => aud ? aud.ended : curT() >= total();
+
+async function start() {
+  if (aud) { await ac.resume(); aud.currentTime = 0; }
+  if (!isPh()) vid.currentTime = 0;
+  const ps = [];
+  if (aud) ps.push(aud.play());
+  if (!isPh()) ps.push(vid.play());
+  await Promise.all(ps);
+  t0 = performance.now(); playing = true;
+}
+function stop() { playing = false; aud?.pause(); vid.pause(); cancelAnimationFrame(raf); }
+
+$('play').onclick = async () => {
+  if (playing) return stop();
+  if (!ready()) return;
+  await start();
+  const tick = () => { draw(curT()); if (playing && !done()) raf = requestAnimationFrame(tick); else stop(); };
+  tick();
+};
+
+$('rec').onclick = async () => {
+  if (playing) stop();
+  if (!ready()) return;
+  const mime = ['video/mp4;codecs=avc1.42E01E,mp4a.40.2', 'video/webm;codecs=vp9,opus', 'video/webm']
+    .find(m => MediaRecorder.isTypeSupported(m));
+  if (!mime) return say('Tu navegador no soporta MediaRecorder.');
+  const ext = mime.startsWith('video/mp4') ? 'mp4' : 'webm';
+
+  const stream = cv.captureStream(30);
+  if (aud) { await ac.resume(); asrc.connect(adest); adest.stream.getAudioTracks().forEach(t => stream.addTrack(t)); }
+  const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8e6 });
+  const chunks = [];
+  rec.ondataavailable = e => e.data.size && chunks.push(e.data);
+  rec.onstop = () => {
+    if (aud) asrc.disconnect(adest);
+    $('rec').disabled = false; $('pg').hidden = true;
+    const url = URL.createObjectURL(new Blob(chunks, { type: mime }));
+    $('out').innerHTML = `<video src="${url}" controls></video><p><a href="${url}" download="resultado.${ext}">Descargar resultado.${ext}</a></p>`;
+    say('Vídeo generado.');
+  };
+
+  $('rec').disabled = true; $('pg').hidden = false; $('out').innerHTML = '';
+  say('Generando en tiempo real: mantén esta pestaña visible.');
+  rec.start(250);
+  await start();
+  const tick = () => {
+    const t = curT(); draw(t);
+    $('pg').value = Math.min(1, t / total() || 0);
+    if (!done()) raf = requestAnimationFrame(tick);
+    else { stop(); setTimeout(() => rec.stop(), 300); }
+  };
+  tick();
+};
+</script>
+</body>
+</html>
